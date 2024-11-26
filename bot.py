@@ -3,6 +3,7 @@ from discord.ext import commands
 import os
 import certifi
 from dotenv import load_dotenv
+import signal
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,8 +42,24 @@ async def main():
     """Main function to run the bot"""
     async with bot:
         await load_extensions()
-        await bot.start(os.getenv('DISCORD_TOKEN'))
+        try:
+            await bot.start(os.getenv('DISCORD_TOKEN'))
+        except KeyboardInterrupt:
+            print("\nShutting down gracefully...")
+            await bot.close()
+        finally:
+            print("Bot offline.")
+
+def handle_shutdown(signum, frame):
+    print("\nReceived signal to terminate. Shutting down gracefully...")
+    raise KeyboardInterrupt
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main()) 
+    # Register signal handlers
+    signal.signal(signal.SIGINT, handle_shutdown)
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass  # Exit cleanly 
