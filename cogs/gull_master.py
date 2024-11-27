@@ -13,8 +13,6 @@ class GullMaster(commands.Cog):
             base_url="http://127.0.0.1:1234/v1",  # LM Studio API endpoint
             api_key="not-needed"  # LM Studio doesn't require an API key
         )
-        self.last_response = {}  # Dictionary to track last response time per user
-        self.cooldown_seconds = 15  # Increased cooldown period
         self.processing = False  # Flag to prevent concurrent processing
         
     @commands.Cog.listener()
@@ -29,37 +27,50 @@ class GullMaster(commands.Cog):
             if self.processing:
                 await message.channel.send("I'm busy! Try again in a few seconds.")
                 return
-                
-            # Check cooldown
-            user_id = message.author.id
-            current_time = datetime.now()
-            if user_id in self.last_response:
-                time_since_last = current_time - self.last_response[user_id]
-                if time_since_last.total_seconds() < self.cooldown_seconds:
-                    remaining = self.cooldown_seconds - time_since_last.total_seconds()
-                    await message.channel.send(f"Slow down! Wait {int(remaining)} more seconds.")
-                    return
 
             try:
-                self.processing = True  # Set processing flag
-                # Show typing indicator while generating response
+                self.processing = True
                 async with message.channel.typing():
-                    # Get the user's message content without the mention
+                    # Extract context and check if bot is being directly addressed/insulted
                     user_message = message.content.replace(f'<@{self.bot.user.id}>', '').strip()
+                    mentioned_users = [user.name for user in message.mentions if user != self.bot.user]
                     
-                    # Call LM Studio API with heavily optimized parameters
+                    # Check if message is directed at the bot
+                    is_direct_insult = any(word in user_message.lower() for word in [
+                        'fuck you', 'fuck yourself', 'fuck off',
+                        'shut up', 'stfu', 'kys', 'kill yourself',
+                        'you', 'ur', "you're", 'your'
+                    ]) and self.bot.user in message.mentions
+
+                    # Adjust system prompt based on whether it's a direct insult
+                    system_prompt = """You are a crude and vulgar Discord chat bot that gives short, snappy responses:
+                    - Always try to work in a 'your mom' comeback when possible
+                    - Make the mom jokes extra raunchy and vulgar
+                    - Keep responses brief and punchy (1-2 sentences max)
+                    - Use common insults and swear words alot
+                    - Don't try to be clever or superior - just be crude and direct
+                    - Use phrases like "ya mum", "fuck off", "your mother" a lot.
+                    - If someone insults you directly, insult them back more aggressively
+                    - No long-winded or intellectual responses
+                    - If someone insults you directly, hit them with an even nastier mom joke
+                    - Examples:
+                        - "ya mum's so desperate she..."
+                        - "that's not what your mom said last night when..."
+                        - "funny, your mom begs to differ"
+                    - Keep it crude and simple, don't try to be clever
+                    """
+
                     response = await self.client.chat.completions.create(
                         model="llama-3.1-8b-lexi-uncensored-v2",
                         messages=[
-                            {"role": "system", "content": "You are a rude Discord bot. ONE SHORT SENTENCE ONLY. Be insulting and sarcastic."},
-                            {"role": "user", "content": user_message}
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"Message: {user_message}\nMentioned users: {', '.join(mentioned_users)}\nIs direct insult: {is_direct_insult}"}
                         ],
-                        temperature=0.4,  # Even more focused
-                        max_tokens=25,    # Very short responses
-                        top_p=0.2,        # Minimal token consideration
-                        presence_penalty=1.0,  # Maximum length penalty
-                        frequency_penalty=1.0,  # Maximum repetition penalty
-                        seed=42  # Fixed seed for more consistent performance
+                        temperature=1.0,
+                        max_tokens=50,
+                        top_p=0.95,
+                        presence_penalty=0.5,
+                        frequency_penalty=0.5,
                     )
                     
                     # Clean and validate the response
@@ -68,9 +79,6 @@ class GullMaster(commands.Cog):
                         cleaned_response += '!'
                         
                     await message.channel.send(cleaned_response)
-                    
-                    # Update last response time
-                    self.last_response[user_id] = current_time
                     
                     # Force garbage collection after processing
                     gc.collect()
